@@ -1,0 +1,3 @@
+[submodule "wizard-engine"]
+	path = wizard-engine
+	url = https://github.com/titzer/wizard-engine.git

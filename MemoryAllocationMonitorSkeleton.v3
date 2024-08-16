@@ -1,0 +1,157 @@
+// Copyright 2024 Wizard Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
+def monitor_ = MonitorRegistry.add(
+    "malloc", "Tracks memory allocation and deallocation.",
+    MemoryAllocationMonitor.new());
+def allocfilter_ = monitor_.addOption("alloc|a", "filter for memory allocation functions");
+def freefilter_ = monitor_.addOption("free|f", "filter for memory free functions");
+
+class MemoryAllocationMonitor extends Monitor {
+
+    var alloc_filter: DeclFilter;
+    var free_filter: DeclFilter;
+
+    // Parse monitor arguments to get malloc and free function filters
+    def configure(args: string) -> string {
+        def argMap = MonitorUtil.argMapFrom(args);
+        var has_alloc = false;
+        var has_free = false;
+        if ((argMap.has("a") || argMap.has("alloc"))) {
+            var alloc_arg: string = if (argMap.has("a"), argMap["a"], argMap["alloc"]);
+            alloc_filter = DeclFilters.parseString(alloc_arg);
+            has_alloc = true;
+        }
+        if ((argMap.has("f") || argMap.has("free"))) {
+            var free_arg = if (argMap.has("f"), argMap["f"], argMap["free"]);
+            free_filter = DeclFilters.parseString(free_arg);
+            has_free = true;
+        }
+        if (has_alloc && has_free) {
+            return null;
+        } else {
+            def buf = StringBuilder.new();
+            buf.put1("invalid argument(s) \"%s\"", args);
+            return buf.toString();
+        }
+    }
+
+    // TODO: Monitor Implementation
+
+}
+
+/***** OUTPUT FORMATTING HELPER METHODS (Do not modify) *****/
+/*
+ * ***Output Format for Grading:***
+ *
+ * **Allocation Tracking Overview:**
+ * Each memory allocation is tracked using a **unique, sequentially incremented id** that starts with 1.
+ * This id will be used when invoking the output helper methods as specified below.
+ *
+ * 1. **Allocation Record Output:**
+ *    - Use the helper method `output_alloc_record()` **after** the alloc function completes.
+ *    - The argument passed to `output_alloc_record()` **must include the unique id** assigned to the allocation.
+ *    - Ensure that the id is **sequentially incremented**, starting from **1**, for each new allocation.
+ *
+ * 2. **Free Record Output:**
+ *    - Use the helper method `output_free_record()` **after** the free function completes.
+ *    - The argument passed to `output_free_record()` **must include the id** of the respective allocation call that is being freed.
+ *    - If no corresponding allocation call can be mapped, the id should be set to **0**.
+ *
+ * 3. **Unfreed Allocation Output:**
+ *    - After the program execution completes, use the helper method `output_unfreed_alloc_record()` to print all unfreed memory allocations.
+ *    - The **unfreed allocations must be printed in ascending order of their allocation id**.
+ *
+ * ***Important Notes:***
+ * - The **correct invocation and order of output** are essential for grading.
+ * - The unfreed allocations **must follow** the specified order based on their allocation id.
+ * - **Do not invoke any other output functions** besides the methods specified above.
+ * - **Double-check your output** to ensure it meets the required format, as incorrect output will result in lost points.
+ */
+
+type CallContext(module: Module, func: FuncDecl, pc: int);
+
+def output_location_prefix(ctx: CallContext) {
+    Trace.OUT.beginColor(Color.FUNC)
+        .mark()
+        .put1("<%q", ctx.func.render(ctx.module.names, _))
+        .ljustify_mark(22)
+        .endColors();
+    Trace.OUT.beginColor(Color.FUNC)
+        .putc('|');
+    Trace.OUT.beginColor(Color.LINE)
+        .mark()
+        .put1(" +%d", ctx.pc)
+        .rjustify_mark(7)
+        .endColors();
+    Trace.OUT.beginColor(Color.FUNC).puts(">   ").endColors();
+}
+
+// Output an allocation event
+def output_alloc_record(ctx: CallContext, size: u32, addr: u32, id: u64) {
+    output_location_prefix(ctx);
+    def success = (addr != 0);
+    // Allocation print
+    Trace.OUT.beginColor(Color.SOURCE)
+        .mark()
+        .put1("Alloc(%d)", size)
+        .rjustify_mark(14)
+        .beginColor(Color.FUNC)
+        .puts(" --> ");
+    Trace.OUT.beginColor (if (success, Color.TYPE, Color.HIGH))
+        .mark()
+        .put1("%d", addr)
+        .rjustify_mark(10);
+    Trace.OUT.beginColor(if (success, Color.SUCCESS, Color.HIGH))
+        .mark()
+        .put1("[%d]", id)
+        .rjustify_mark(10)
+        .endColors()
+        .ln();
+}
+
+// Output a free event
+def output_free_record(ctx: CallContext, addr: u32, id: u64) {
+    output_location_prefix(ctx);
+    def success = (id != 0);
+    // Free print
+    Trace.OUT.beginColor(Color.COUNT)
+        .mark()
+        .put1("Free(%d)", addr)
+        .rjustify_mark(14)
+        .beginColor(Color.FUNC)
+        .puts(" --> ");
+    if (success) {
+        Trace.OUT.beginColor(Color.SUCCESS)
+            .mark()
+            .put1("[%d]", id)
+            .rjustify_mark(10)
+            .endColors()
+            .ln();
+    } else {
+        Trace.OUT.beginColor(Color.HIGH)
+            .mark()
+            .puts("[??]")
+            .rjustify_mark(10)
+            .endColors()
+            .ln();
+    }
+}
+
+// Output an unfreed allocation event
+def output_unfreed_alloc(id: u64, addr: u32) {
+    Trace.OUT.beginColor(Color.HIGH)
+        .mark()
+        .put1("[%d] ", id)
+        .rjustify_mark(10);
+    Trace.OUT.beginColor(Color.TYPE)
+        .mark()
+        .put1("%d ", addr)
+        .rjustify_mark(10);
+    Trace.OUT.beginColor(Color.FUNC)
+        .mark()
+        .puts("Unfreed Allocation")
+        .ln();
+}
+/******************/
+

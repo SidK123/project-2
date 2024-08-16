@@ -1,0 +1,75 @@
+// Copyright 2024 Wizard Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
+def monitor_ = MonitorRegistry.add(
+    "paths", "Profiles all unique paths through the program.",
+    PathProfilingMonitor.new());
+
+class PathProfilingMonitor extends Monitor {
+    // TODO: Monitor Implementation
+}
+
+/***** OUTPUT FORMATTING HELPER METHODS (Do not modify) *****/
+/*
+ * ***Output Format for Grading:***
+ *
+ * 1. **Function Header Output:**
+ *    - Use the helper method `output_func_header()` to print the header for each function.
+ *    - The **function headers must be printed in increasing order of function index** (e.g., Func0, Func1, Func2, ...).
+ *    - This method should be invoked before printing any paths for the function.
+ *
+ * 2. **Path Output:**
+ *    - Use the helper method `output_path()` to print each path as a list of PathEntries, representing the order in which the paths were visited.
+ *    - The **paths for each function must be printed in decreasing order of their length** (i.e., longest path first).
+ *
+ * ***Post-Execution Output:***
+ *    - After the program execution completes, ensure that **each function's information is printed in increasing order of function index**.
+ *    - After printing each function header, **all paths associated with that function must be output in decreasing order of their path length**.
+ *
+ * ***Important Notes:***
+ * - The **correct order of function headers and paths** is essential for grading.
+ * - The paths **must be ordered from longest to shortest** for each function.
+ * - Do not report unvisited functions or paths.
+ * - Remember that returning from a function and the 'loop' bytecode terminate the path. Entering a new function initiates a new path
+ * - **Do not invoke any other output functions** besides the methods specified above.
+ * - **Double-check your output** to ensure it meets the required format, as incorrect output will result in lost points.
+ */
+
+type PathEntry(pc: int);
+
+// Method to output function header
+def output_func_header(module: Module, func: FuncDecl) {
+    Trace.OUT.beginColor(Color.FUNC)
+        .put1("func %q:", func.render(module.names, _))
+        .endColors().ln();
+
+}
+
+// Method to output a single path
+def output_path(path: Array<PathEntry>, count: u64) {
+    if (path.length == 0) {
+        Trace.OUT.beginColor(Color.HIGH).puts("Unknown Empty Path").ln();
+        return;
+    }
+    for (i < path.length) {
+        Trace.OUT.beginColor(Color.SOURCE)
+            .mark()
+            .put1("+%d", path[i].pc)
+            .rjustify_mark(3)
+            .endColors();
+        Trace.OUT.beginColor(Color.FUNC)
+            .puts(" --> ")
+            .endColors();
+    }
+    Trace.OUT.beginColor(Color.COUNT)
+        .puts("|EoF| ");
+    Trace.OUT.beginColor(Color.SUCCESS)
+        .mark()
+        .put1("%d", count)
+        .rjustify_mark(6)
+        .endColors()
+        .ln();
+}
+/******************/
+
+
