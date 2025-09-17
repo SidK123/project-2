@@ -3,8 +3,9 @@
 In this task, you will implement a Wizard monitor to profile memory allocation primitives (e.g. malloc/free), and report these
 events to the user during execution.
 
-The monitor will be provided the name of the allocation function and the name of the free function as arguments. You can
-assume that the address passed into the malloc function and the free function are exactly the same.
+The monitor will be provided the name of the allocation function and the name of the free function as arguments.
+(Use `wizeng --help` for guidance on loading monitors with arguments.)
+You can assume that the address passed into the malloc function and the free function are exactly the same.
 You will monitor the address of allocations, their size, as well as the corresponding free function invocation that deallocates it.
 
 ## Output Format for Grading:

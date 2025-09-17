@@ -1,8 +1,9 @@
 # Instruction Class Monitor
 
 In this task, you will implement a Wizard monitor that classifies all executed instructions into predetermined instruction classes. 
-You will report the number of static instructions and dynamically observed instructions that fall under each class after a 
-Wasm module has executed. Each instruction will belong to at most a single class.
+You will report the number of static instructions (i.e. the count of instructions that appear in the binary) and dynamic instructions (i.e. the number of times an instruction is executed) that fall under each class. Each instruction will belong to at most a single class. 
+
+We have provided a helper `classify` that has the mapping between Wasm instruction and Instruction class.
 
 ## Output Format for Grading:
 

@@ -1,16 +1,20 @@
 # Path Profiling
 
-In this task, you will implement a Wizard monitor to detect all unique paths executed in functions across the program, and report the number
-of times each of them were executed.
+In this task, you will implement a Wizard monitor to detect all unique paths
+executed in functions across the program, and report the number of times each 
+of them were executed.
 
-A path will consist of an ordered list of program counters. These program counters represent the target of any instruction that may
-change the control flow of the program (i.e branches, if/else).
+A path consists of an ordered list of program counters. These program counters
+represent the target of any instruction that may change the control flow of the
+program (i.e branches, if/else). Essentially, the list contains the first pc of
+every basic block executed in the path.
 
-To disallow arbitrarily long paths, paths are terminated when returning from a function and at the `loop` bytecode.
-
-Entering a function is the first entry in a path, represented by `pc=0`. As a result, every execution of a function
+Each function contains a set of paths that go through it. 
+Entering a function is the first entry in a path, represented by `pc=0`. 
+As a result, every execution of a function
 will generate at least one path.
 
+A path is termined when returning from a function and at a `loop` bytecode.
 When encountering a loop bytecode, terminate the path. This path should end with the PC of the loop bytecode.
 Start new paths again with the PC of the `loop` bytecode after terminating it. This prevents aliasing of paths under specific circumstances.
 

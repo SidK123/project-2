@@ -7,6 +7,8 @@ understanding spatial and temporal data locality properties of program. Your cac
 * Block Size: 128 byte block
 * Replacement Policy: LRU
 
+You will determine, for instructions which access Wasm's memory, how many accesses are cache hits and how many are cache misses.
+
 As with hardware caches, you will begin with a cold-start (i.e, the cache is empty when the module begin).
 
 ## Output Format for Grading:
