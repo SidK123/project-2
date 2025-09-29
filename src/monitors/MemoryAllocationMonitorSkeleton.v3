@@ -12,7 +12,6 @@ class MemoryAllocationMonitor extends Monitor {
 
 	var alloc_filter: DeclFilter;
 	var free_filter: DeclFilter;
-	var module : Module;
 
 	def configure(args: string) -> string {
 		alloc_filter = allocfilter_.val;
@@ -29,9 +28,10 @@ class MemoryAllocationMonitor extends Monitor {
 	// TODO: Monitor Implementation
 
 	def onParse(module: Module, err: ErrorGen) {
-		System.puts("In here!\n");
 		var mm = ModuleInstrumenter.new(module);
+		System.puts("Getting allocation func!\n");
 		var alloc_func = return_func_decl_of_filter(module, alloc_filter);
+		System.puts("Getting free func!\n");
 		var free_func = return_func_decl_of_filter(module, free_filter);
 		mm.beforeFuncReturn(alloc_func, fire_on_alloc_return);
 		mm.beforeFuncReturn(free_func, fire_on_free_return);
@@ -64,10 +64,7 @@ private class MemoryAllocationMonitorBytecodeVisitor(var bi : BytecodeIterator, 
 		insert(CallProbe.new(false, func_index, global_alloc_status.module, alloc_filter, free_filter));
 	}
 	def visit_CALL_INDIRECT(sig_index: u31, table_index: u31)	 { 
-		insert(CallIndirectProbe.new(false, 0));
-	}
-	def visit_CALL_REF(sig_index: u31) { 
-		insert(CallRefProbe.new(false, 0)); 
+		insert(CallIndirectProbe.new(false, table_index, global_alloc_status.module, alloc_filter, free_filter));
 	}
 	def insert(probe: Probe) {
 		Instrumentation.insertLocalProbe(global_alloc_status.module, current_function.func_index, bi.pc, probe);
@@ -88,7 +85,7 @@ private class AllocStatus() {
 def global_alloc_status = AllocStatus.new();
 
 def is_function_specified_by_filter (module : Module, filter : DeclFilter, func_index : u31) -> bool {
-	return (filter.matchesStr(module.name, module.names.getFuncName(func_index)));
+	return filter.matches(module, module.functions[i32.!(func_index)]);
 }
 
 def return_func_decl_of_filter (module : Module, filter : DeclFilter) -> FuncDecl {
@@ -111,10 +108,14 @@ def fire_on_alloc_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	global_alloc_status.addresses.set(curr_vec_index, address_value); 
 	global_alloc_status.freed.set(curr_vec_index, false); 
 	global_alloc_status.size.set(curr_vec_index, size_of_allocation); 
+
 	var callcontext = CallContext(global_alloc_status.module, global_alloc_status.callsite_funcdecl[curr_vec_index], global_alloc_status.callsite_pc[curr_vec_index]);
+
 	output_alloc_record(callcontext, size_of_allocation, address_value, curr_allocation_id + 1);
+
 	global_alloc_status.curr_allocation_id +=1;
 	global_alloc_status.curr_vec_index 	   +=1;
+
 	return ProbeAction.Continue;
 }
 
@@ -126,11 +127,13 @@ def fire_on_free_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	for (i = 0; i < global_alloc_status.addresses.length; i++) {
 		if (global_alloc_status.addresses.get(i) == address_value) {
 			var callcontext = CallContext(global_alloc_status.module, global_alloc_status.callsite_funcdecl[i], global_alloc_status.callsite_pc[i]);
+
 			if (global_alloc_status.freed.get(i)) {
 				output_free_record(callcontext, address_value, 0);
 			} else {
 				output_free_record(callcontext, address_value, index);
 			}
+
 			global_alloc_status.freed.set(i, true);
 		}
 		index += 1;
@@ -138,42 +141,59 @@ def fire_on_free_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	return ProbeAction.Continue;
 }
 
+def resolveFuncIdx(table: Table, entry_idx: int) -> int {
+	if (table.funcs != null) {
+		return WasmFunction.!(table.funcs[entry_idx]).decl.func_index;
+	}
+	return -1;
+}
+
+def update_global_alloc_status(dynamicLoc : DynamicLoc, func_index : u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) -> ProbeAction {
+	var accessor = dynamicLoc.frame.getFrameAccessor();
+	var callsite_pc = accessor.pc();
+	var callsite_funcdecl = accessor.func().decl;
+
+	if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
+		var curr_allocation_id = global_alloc_status.curr_allocation_id;
+		var curr_vec_index = global_alloc_status.curr_vec_index;
+
+		global_alloc_status.callsite_pc.set(curr_vec_index , callsite_pc);
+		global_alloc_status.callsite_funcdecl.set(curr_vec_index, callsite_funcdecl);
+
+		return ProbeAction.Continue;
+	} else if (is_function_specified_by_filter(module, free_filter, func_index)) {
+		var address_to_free = Values.unbox_u(accessor.getTopOfStack());
+
+		for (i = 0; i < global_alloc_status.addresses.length; i++) {
+			if (global_alloc_status.addresses.get(i) == address_to_free) {
+				global_alloc_status.callsite_pc.set(i, callsite_pc);
+				global_alloc_status.callsite_funcdecl.set(i, callsite_funcdecl);
+			}
+		}
+
+		return ProbeAction.Continue;
+	}
+	return ProbeAction.Continue;
+}
+
 private class CallProbe(tail: bool, func_index: u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) extends Probe {
 	def fire(dynamicLoc: DynamicLoc) -> ProbeAction {
-		var accessor = dynamicLoc.frame.getFrameAccessor();
-		var callsite_pc = accessor.pc();
-		var callsite_funcdecl = accessor.func().decl;
-		if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
-			var curr_allocation_id = global_alloc_status.curr_allocation_id;
-			var curr_vec_index = global_alloc_status.curr_vec_index;
-			global_alloc_status.callsite_pc.set(curr_vec_index , callsite_pc);
-			global_alloc_status.callsite_funcdecl.set(curr_vec_index, callsite_funcdecl);
-			return ProbeAction.Continue;
-		} else if (is_function_specified_by_filter(module, free_filter, func_index)) {
-			var address_to_free = Values.unbox_u(accessor.getTopOfStack());
-			for (i = 0; i < global_alloc_status.addresses.length; i++) {
-				if (global_alloc_status.addresses.get(i) == address_to_free) {
-					global_alloc_status.callsite_pc.set(i, callsite_pc);
-					global_alloc_status.callsite_funcdecl.set(i, callsite_funcdecl);
-				}
-			}
-			return ProbeAction.Continue;
-		}
-		return ProbeAction.Continue;
+		return update_global_alloc_status(dynamicLoc, func_index, module, alloc_filter, free_filter);
 	}		
 }
 
-private class CallIndirectProbe(tail: bool, func_index: u31) extends Probe { 
+private class CallIndirectProbe(tail: bool, table_index: u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) extends Probe { 
 	def fire(dynamicLoc: DynamicLoc) -> ProbeAction {
-		return ProbeAction.Continue;
+		var accessor = dynamicLoc.frame.getFrameAccessor();
+		var target_index = Values.unbox_i(accessor.getOperand(0));
+		var table = dynamicLoc.func.instance.tables[table_index];
+		if (table_index >= table.funcs.length) return ProbeAction.Continue; // will trap
+		var func_index = resolveFuncIdx(table, target_index);
+
+		return update_global_alloc_status(dynamicLoc, u31.!(func_index), module, alloc_filter, free_filter);
 	}
 }
 
-private class CallRefProbe(tail: bool, func_index: u31) extends Probe {
-	def fire(dynamicLoc: DynamicLoc) -> ProbeAction {
-		return ProbeAction.Continue;
-	}
-}
 /***** OUTPUT FORMATTING HELPER METHODS (Do not modify) *****/
 /*
  * ***Output Format for Grading:***

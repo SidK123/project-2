@@ -7,8 +7,51 @@ def X_ = MonitorRegistry.add(
 
 class InstrClassMonitor extends Monitor {
 	//.TODO: Monitor implementation
+	def it = BytecodeIterator.new();
+
+	def onParse(m: Module, err: ErrorGen) {
+		ModuleInstrumenter.new(m).forEachFunc(instrument);
+	}
+
+	def onFinish(i: Instance, r: Result) {
+		var sorted_arr = sort_array();
+		output(sorted_arr);
+	}
+
+	private def instrument(mm: ModuleInstrumenter, func: FuncDecl) {
+		for (bi = it.reset(func); bi.more(); bi.next()) {
+			var op = bi.current();
+			var instr_class = classify(op);
+			var arr_index = instr_class_to_index(instr_class);
+			var probe: ClassMonitorProbe;
+			var e = global_count_array[arr_index];
+			probe = ClassMonitorProbe.new(false, op);
+			global_count_array[arr_index] = InstrClassEntry(instr_class, e.static_count + 1u, 0);
+			Instrumentation.insertLocalProbe(mm.module, func.func_index, bi.pc, probe);
+		}
+	}
 }
 
+def compare(a: InstrClassEntry, b: InstrClassEntry) -> bool {
+	return a.count > b.count;
+}
+
+def sort_array() -> Array<InstrClassEntry> { 
+	var array : Array<InstrClassEntry>;
+	array = Arrays.sort(global_count_array, 0, global_count_array.length, compare);
+	return array;
+}
+
+private class ClassMonitorProbe (tail: bool, opcode: Opcode) extends Probe {
+	def fire(dynamicLoc: DynamicLoc) -> ProbeAction {
+		var instr_class = classify(opcode);
+		var index = instr_class_to_index(instr_class);
+		var static_count = global_count_array[index].static_count;
+		var dynamic_count = global_count_array[index].count;
+		global_count_array[index] = InstrClassEntry(instr_class, static_count, dynamic_count + 1u); 
+		return ProbeAction.Continue;
+	}		
+}
 
 /***** Output Code *****/
 def table = initTable();
@@ -19,6 +62,8 @@ def initTable() -> TraceTable {
 	t.cells[2].set(12, Justification.RIGHT, Color.NONE);
 	return t;
 }
+
+var global_count_array = Array<InstrClassEntry>.new(9);
 
 // List of instruction classes
 enum InstrClass(ch: byte, color: string) {
@@ -32,6 +77,29 @@ enum InstrClass(ch: byte, color: string) {
 	SIMD_ARITH	('s', TermColors.CYAN),
 	REF		('r', TermColors.MAGENTA)
 }
+
+def instr_class_to_index (op : InstrClass) -> int {
+	if (op == InstrClass.NOP) {
+		return 0;
+	} else if (op == InstrClass.CONTROL) {
+		return 1;
+	} else if (op == InstrClass.DATA) {
+		return 2;
+	} else if (op == InstrClass.CALL) {
+		return 3;
+	} else if (op == InstrClass.MEMORY) {
+		return 4;
+	} else if (op == InstrClass.INT_ARITH) {
+		return 5;
+	} else if (op == InstrClass.FLOAT_ARITH) {
+		return 6;
+	} else if (op == InstrClass.SIMD_ARITH) {
+		return 7;
+	} else {
+		return 8;
+	}
+}
+
 type InstrClassEntry(op: InstrClass, static_count: u32, count: u64);
 
 // Output the final list of instruction classes after execution has completed.
