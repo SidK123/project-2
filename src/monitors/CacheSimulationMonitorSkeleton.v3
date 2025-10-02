@@ -6,9 +6,254 @@ def monitor_ = MonitorRegistry.add(
 	CacheSimulationMonitor.new());
 
 
+var NUM_WAYS = 4;
+var BLOCK_OFFSET_BITS = 7;
+var SET_INDEX_BITS = 11;
+var NUM_SETS = 2048;
+var TAG_BITS = 14;
+var global_timestamp : u32 = 0;
+
 class CacheSimulationMonitor extends Monitor {
 	// TODO: Monitor Implementation
+	def it = BytecodeIterator.new();
+	var module : Module;
+
+	def onParse(m: Module, err: ErrorGen) {
+		module = m;
+		func_pc_to_cache_entry = Array.new(module.functions.length); 
+		cache = Array.new(NUM_WAYS);
+		for (i = 0; i < m.functions.length; i++) {
+			func_pc_to_cache_entry[i] = Vector<PcCacheStat>.new();
+		}
+		for (i = 0; i < NUM_WAYS; i++) {
+			cache[i] = Array.new(NUM_SETS);
+		}
+		ModuleInstrumenter.new(m).forEachFunc(instrument);
+	}
+
+	def compare_pc_cache_stats (stat1 : PcCacheStat, stat2 : PcCacheStat) -> bool {
+		return (stat1.pc < stat2.pc);
+	}
+
+	def onFinish(i: Instance, r: Result) {
+		for (i = 0; i < module.functions.length; i++) {
+			var cache_stats = func_pc_to_cache_entry[i];
+			if (cache_stats.length == 0) {
+				continue;
+			}
+			output_func_header(module, module.functions[i]);
+			var cache_stats_arr = cache_stats.copy();
+			var sorted_stats = Arrays.sort(cache_stats_arr, 0, cache_stats.length, compare_pc_cache_stats);
+			for (j = 0; j < sorted_stats.length; j++) {
+				output_cache_stat(sorted_stats[j].pc, sorted_stats[j].op, sorted_stats[j].stat);
+			}
+		}
+	}
+
+	private def instrument(mm: ModuleInstrumenter, func: FuncDecl) {
+		var b = StringBuilder.new();
+		def visitor = CacheSimulatorBytecodeVisitor.new(BytecodeIterator.new(), module, func.func_index);
+		visitor.bi.reset(func).dispatchAll(visitor);
+	}
 }
+
+private class CacheSimulatorBytecodeVisitor(var bi : BytecodeIterator, module : Module, func_idx : int) extends BytecodeVisitor {
+	def visit_I32_LOAD(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_I32_LOAD8_S(mm : MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I32_LOAD8_U(mm : MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I32_LOAD16_S(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I32_LOAD16_U(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I64_LOAD(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 8));
+	}
+	def visit_I64_LOAD8_S(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I64_LOAD8_U(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I64_LOAD16_S(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I64_LOAD16_U(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I64_LOAD32_S(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_I64_LOAD32_U(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_F64_LOAD(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 8));
+	}
+	def visit_I32_STORE(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_I32_STORE8(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I32_STORE16(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I64_STORE(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 8));
+	}
+	def visit_I64_STORE8(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 1));
+	}
+	def visit_I64_STORE16(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 2));
+	}
+	def visit_I64_STORE32(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_F64_STORE(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 8));
+	}
+	def insert(probe: Probe) {
+		Instrumentation.insertLocalProbe(module, func_idx, bi.pc, probe);
+	}
+}
+
+def find_way_for_cache_line (set_index : u32) -> int {
+	var lru_way = -1;
+	var lru_counter = 4294967295;
+	for (i : int = 0; i < NUM_WAYS; i++) {
+		if (cache[i][set_index].data == 0) {
+			return i; // If cache is cold.
+		}
+		if (int.!(cache[i][set_index].reference_count) < lru_counter) {
+			lru_counter = int.!(cache[i][set_index].reference_count);
+			lru_way = i; 
+		}
+	}
+	return lru_way;
+}
+
+def update_vec_at_pc (module : Module, func_index : int, op : string, pc : int, hit_or_miss : bool) {
+	for (i = 0; i < func_pc_to_cache_entry[func_index].length; i++) {
+		if (func_pc_to_cache_entry[func_index].get(i).pc == pc) {
+			if (!hit_or_miss) {
+				func_pc_to_cache_entry[func_index].set(i, PcCacheStat(pc, op, CacheStat(func_pc_to_cache_entry[func_index].get(i).stat.hits, func_pc_to_cache_entry[func_index].get(i).stat.misses + 1)));
+			} else {
+				func_pc_to_cache_entry[func_index].set(i, PcCacheStat(pc, op, CacheStat(func_pc_to_cache_entry[func_index].get(i).stat.hits + 1, func_pc_to_cache_entry[func_index].get(i).stat.misses)));
+			}
+			return;
+		}
+	} 
+	var new_stat : PcCacheStat;
+	if (hit_or_miss) { // Hit
+		new_stat = PcCacheStat(pc, op, CacheStat(1, 0));
+	} else { // Miss
+		new_stat = PcCacheStat(pc, op, CacheStat(0, 1));
+	}
+	func_pc_to_cache_entry[func_index].put(new_stat);
+	return;
+}
+
+def compare_cache_stats (stat1 : PcCacheStat, stat2 : PcCacheStat) -> bool {
+	return (stat1.pc > stat2.pc);
+}
+
+// def sort_array(vec : Vector<PcCacheStat>) -> Array<PcCacheStat> { 
+// 	var array : Array<PcCacheStat>;
+// 	if (vec.array != null) {
+// 		array = Arrays.sort(vec.array, 0, vec.array.length, compare_cache_stats);
+// 	} else {
+// 		array = null;
+// 	}
+// 	return array;
+// }
+
+// Structure of address: | 14 Bits of Tag | 11 Bits of Set Index | 7 Bits of Byte Offset | 
+def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module : Module, op : string, dynamicLoc : DynamicLoc) -> ProbeAction {
+	var accessor = dynamicLoc.frame.getFrameAccessor();
+	var base_address : u32;
+	if (load_or_store) { // Load
+		base_address = Values.unbox_u(accessor.getTopOfStack());
+	} else {
+		base_address = Values.unbox_u(accessor.getOperand(-1));
+	}
+
+	var address = u32.!(mm.offset) + base_address;
+	var ending_address = u32.!(mm.offset) + base_address + access_size - 1;
+
+	var start_block_tag = (address & 0xFFFC0000) >> byte.!(SET_INDEX_BITS+BLOCK_OFFSET_BITS);
+	var start_block_set_index = (address & 0x3FF80) >> byte.!(BLOCK_OFFSET_BITS);
+	var start_block_byte_offset = (address & 0x7F);
+	
+	var ending_block_tag = (ending_address & 0xFFFC0000) >> byte.!(SET_INDEX_BITS+BLOCK_OFFSET_BITS);
+	var ending_block_set_index = (ending_address & 0x3FF80) >> byte.!(BLOCK_OFFSET_BITS);
+	var ending_block_byte_offset = (ending_address & 0x7F);
+
+	var starting_block_hit = false;
+	var ending_block_hit   = false;
+
+	for (i = 0; i < NUM_WAYS; i++) {
+		var entry_way_i = cache[i][start_block_set_index];
+		if (entry_way_i.tag == start_block_tag && entry_way_i.data != 0) { 
+			starting_block_hit = true; 
+			cache[i][start_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, 2);
+		} 
+		entry_way_i = cache[i][ending_block_set_index];
+		if (entry_way_i.tag == ending_block_tag && entry_way_i.data != 0) {
+			ending_block_hit = true;
+			cache[i][ending_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, 2);
+		}
+	}
+
+	if (starting_block_hit && ending_block_hit) {
+		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), true);
+		return ProbeAction.Continue;
+	} 
+	
+	if (!starting_block_hit) {
+		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
+		var way = find_way_for_cache_line(start_block_set_index);
+		cache[way][start_block_set_index] = CacheEntry(global_timestamp, start_block_tag, 2);
+	} 
+
+	if(!ending_block_hit && (start_block_set_index != ending_block_set_index)) {
+		if (starting_block_hit) {
+			update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
+		}
+		var way = find_way_for_cache_line(ending_block_set_index);
+		cache[way][ending_block_set_index] = CacheEntry(global_timestamp, ending_block_tag, 2);
+	}
+
+	global_timestamp += 1;
+
+	return ProbeAction.Continue;
+}
+
+private class LoadProbe(module : Module, mm : MemArg, op : string, access_size : u32) extends Probe {
+	def fire(dynamicLoc : DynamicLoc) -> ProbeAction {
+		return cache_update(true, access_size, mm, module, op, dynamicLoc);
+	}
+}
+
+private class StoreProbe(module : Module, mm : MemArg, op : string, access_size : u32) extends Probe {
+	def fire(dynamicLoc : DynamicLoc) -> ProbeAction {
+		return cache_update(false, access_size, mm, module, op, dynamicLoc);
+	}
+}
+
+type PcCacheStat(pc : int, op : string, stat : CacheStat);
+type CacheEntry(reference_count : u32, tag : u32, data : u32); // Technically never comparing against data, but whatever.
+
+var func_pc_to_cache_entry : Array<Vector<PcCacheStat>>;
+var cache : Array<Array<CacheEntry>>;
 
 /***** OUTPUT FORMATTING HELPER METHODS (Do not modify) *****/
 /*
