@@ -241,7 +241,7 @@ private class StoreProbe(module : Module, mm : MemArg, op : string, access_size 
 }
 
 type PcCacheStat(pc : int, op : string, stat : CacheStat);
-type CacheEntry(reference_count : u32, tag : u32, data : u32); // Technically never comparing against data, but whatever.
+type CacheEntry(reference_count : u32, tag : u32, data : u32); 
 
 var func_pc_to_cache_entry : Array<Vector<PcCacheStat>>;
 var cache : Array<Array<CacheEntry>>;
