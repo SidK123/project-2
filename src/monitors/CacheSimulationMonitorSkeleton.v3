@@ -11,6 +11,7 @@ var BLOCK_OFFSET_BITS = 7;
 var SET_INDEX_BITS = 11;
 var NUM_SETS = 2048;
 var TAG_BITS = 14;
+var RANDOM_DATA : u32 = 0xCAFEF00D;
 var global_timestamp : u32 = 0;
 
 class CacheSimulationMonitor extends Monitor {
@@ -166,16 +167,6 @@ def compare_cache_stats (stat1 : PcCacheStat, stat2 : PcCacheStat) -> bool {
 	return (stat1.pc > stat2.pc);
 }
 
-// def sort_array(vec : Vector<PcCacheStat>) -> Array<PcCacheStat> { 
-// 	var array : Array<PcCacheStat>;
-// 	if (vec.array != null) {
-// 		array = Arrays.sort(vec.array, 0, vec.array.length, compare_cache_stats);
-// 	} else {
-// 		array = null;
-// 	}
-// 	return array;
-// }
-
 // Structure of address: | 14 Bits of Tag | 11 Bits of Set Index | 7 Bits of Byte Offset | 
 def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module : Module, op : string, dynamicLoc : DynamicLoc) -> ProbeAction {
 	var accessor = dynamicLoc.frame.getFrameAccessor();
@@ -204,12 +195,12 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 		var entry_way_i = cache[i][start_block_set_index];
 		if (entry_way_i.tag == start_block_tag && entry_way_i.data != 0) { 
 			starting_block_hit = true; 
-			cache[i][start_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, 2);
+			cache[i][start_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, RANDOM_DATA);
 		} 
 		entry_way_i = cache[i][ending_block_set_index];
 		if (entry_way_i.tag == ending_block_tag && entry_way_i.data != 0) {
 			ending_block_hit = true;
-			cache[i][ending_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, 2);
+			cache[i][ending_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, RANDOM_DATA);
 		}
 	}
 
@@ -221,7 +212,7 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 	if (!starting_block_hit) {
 		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
 		var way = find_way_for_cache_line(start_block_set_index);
-		cache[way][start_block_set_index] = CacheEntry(global_timestamp, start_block_tag, 2);
+		cache[way][start_block_set_index] = CacheEntry(global_timestamp, start_block_tag, RANDOM_DATA);
 	} 
 
 	if(!ending_block_hit && (start_block_set_index != ending_block_set_index)) {
@@ -229,7 +220,7 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 			update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
 		}
 		var way = find_way_for_cache_line(ending_block_set_index);
-		cache[way][ending_block_set_index] = CacheEntry(global_timestamp, ending_block_tag, 2);
+		cache[way][ending_block_set_index] = CacheEntry(global_timestamp, ending_block_tag, RANDOM_DATA);
 	}
 
 	global_timestamp += 1;
