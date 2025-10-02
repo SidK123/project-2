@@ -173,7 +173,7 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 	var base_address : u32;
 	if (load_or_store) { // Load
 		base_address = Values.unbox_u(accessor.getTopOfStack());
-	} else {
+	} else { // Store
 		base_address = Values.unbox_u(accessor.getOperand(-1));
 	}
 

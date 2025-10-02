@@ -114,10 +114,14 @@ def return_func_decl_of_filter (module : Module, filter : DeclFilter) -> FuncDec
 def fire_on_alloc_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	var accessor = dynamicLoc.frame.getFrameAccessor();
 	var address_value = Values.unbox_u(accessor.getTopOfStack());
-	var size_of_allocation = Values.unbox_u(accessor.getLocal(0));
 
 	var curr_allocation_id = global_alloc_status.curr_allocation_id;
 	var curr_vec_index 	   = int.!(curr_allocation_id);
+
+	var size_of_allocation = get_alloc_size(curr_vec_index);
+	var buf = StringBuilder.new().put1("Address value is %d!\n", address_value);
+	buf.put1("Alloc size is %d!\n", size_of_allocation);
+	System.puts(buf.toString());
 
 	var callsite_pc = get_alloc_callsite_pc(curr_vec_index);
 	var callsite_funcdecl = get_alloc_callsite_funcdecl(curr_vec_index);
@@ -143,12 +147,13 @@ def update_global_alloc_status(dynamicLoc : DynamicLoc, func_index : u31, module
 	var accessor = dynamicLoc.frame.getFrameAccessor();
 	var callsite_pc = accessor.pc();
 	var callsite_funcdecl = accessor.func().decl;
+	var size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
 
 	if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
 		var curr_allocation_id = global_alloc_status.curr_allocation_id;
 		var curr_vec_index = int.!(curr_allocation_id);
 
-		global_alloc_status.alloc_params.set(curr_vec_index, AllocParam(false, 0, 0, callsite_pc, callsite_funcdecl)); 
+		global_alloc_status.alloc_params.set(curr_vec_index, AllocParam(false, size_of_allocation, 0, callsite_pc, callsite_funcdecl)); 
 		return ProbeAction.Continue;
 
 	} else if (is_function_specified_by_filter(module, free_filter, func_index)) {
