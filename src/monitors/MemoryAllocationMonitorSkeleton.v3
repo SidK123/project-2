@@ -29,9 +29,7 @@ class MemoryAllocationMonitor extends Monitor {
 
 	def onParse(module: Module, err: ErrorGen) {
 		var mm = ModuleInstrumenter.new(module);
-		System.puts("Getting allocation func!\n");
 		var alloc_func = return_func_decl_of_filter(module, alloc_filter);
-		System.puts("Getting free func!\n");
 		var free_func = return_func_decl_of_filter(module, free_filter);
 		if (alloc_func != null) {
 			mm.beforeFuncReturn(alloc_func, fire_on_alloc_return);
