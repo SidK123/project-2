@@ -119,9 +119,6 @@ def fire_on_alloc_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	var curr_vec_index 	   = int.!(curr_allocation_id);
 
 	var size_of_allocation = get_alloc_size(curr_vec_index);
-	var buf = StringBuilder.new().put1("Address value is %d!\n", address_value);
-	buf.put1("Alloc size is %d!\n", size_of_allocation);
-	System.puts(buf.toString());
 
 	var callsite_pc = get_alloc_callsite_pc(curr_vec_index);
 	var callsite_funcdecl = get_alloc_callsite_funcdecl(curr_vec_index);
