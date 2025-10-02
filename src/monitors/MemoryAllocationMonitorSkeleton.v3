@@ -33,8 +33,12 @@ class MemoryAllocationMonitor extends Monitor {
 		var alloc_func = return_func_decl_of_filter(module, alloc_filter);
 		System.puts("Getting free func!\n");
 		var free_func = return_func_decl_of_filter(module, free_filter);
-		mm.beforeFuncReturn(alloc_func, fire_on_alloc_return);
-		mm.beforeFuncReturn(free_func, fire_on_free_return);
+		if (alloc_func != null) {
+			mm.beforeFuncReturn(alloc_func, fire_on_alloc_return);
+		} 
+		if (free_func != null) {
+			mm.beforeFuncReturn(free_func, fire_on_free_return);
+		}
 		global_alloc_status.module = module;
 		mm.forEachFunc(instrumentFunc);
 	}
