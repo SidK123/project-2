@@ -39,13 +39,10 @@ class MemoryAllocationMonitor extends Monitor {
 	}
 
 	def onFinish(i: Instance, r: Result) {
-		var allocation_id : u64;
-		allocation_id = 1;
-		for (i = 0; i < global_alloc_status.addresses.length; i++) {
-			if (!global_alloc_status.freed[i]) {
-				output_unfreed_alloc(allocation_id, global_alloc_status.addresses[i]);
+		for (i : u64 = 0; i < global_alloc_status.alloc_params.length; i++) {
+			if (!global_alloc_status.alloc_params.get(int.!(i)).freed) {
+				output_unfreed_alloc(i + 1, global_alloc_status.alloc_params.get(int.!(i)).alloc_address);
 			}
-			allocation_id += 1;
 		}
 	}
 
@@ -70,17 +67,35 @@ private class MemoryAllocationMonitorBytecodeVisitor(var bi : BytecodeIterator, 
 	}
 }
 
+type AllocParam(freed : bool, alloc_size : u32, alloc_address : u32, callsite_pc : int, callsite_funcdecl : FuncDecl);
+
 private class AllocStatus() {
 	var module : Module;
 	var curr_allocation_id : u64 = 0;
-	var freed     = Vector<bool>.new();
-	var size      = Vector<u32>.new();
-	var addresses = Vector<u32>.new();
-	var callsite_pc = Vector<int>.new();
-	var callsite_funcdecl = Vector<FuncDecl>.new();
+	var alloc_params = Vector<AllocParam>.new();
 }
 
 def global_alloc_status = AllocStatus.new();
+
+def get_alloc_freed_status(id : int) -> bool {
+	return global_alloc_status.alloc_params.get(id).freed;
+}
+
+def get_alloc_size(id : int) -> u32 {
+	return global_alloc_status.alloc_params.get(id).alloc_size;
+}
+
+def get_alloc_address(id : int) -> u32 {
+	return global_alloc_status.alloc_params.get(id).alloc_address;
+}
+
+def get_alloc_callsite_pc(id : int) -> int {
+	return global_alloc_status.alloc_params.get(id).callsite_pc;
+}
+
+def get_alloc_callsite_funcdecl(id : int) -> FuncDecl{
+	return global_alloc_status.alloc_params.get(id).callsite_funcdecl;
+}
 
 def is_function_specified_by_filter (module : Module, filter : DeclFilter, func_index : u31) -> bool {
 	return filter.matches(module, module.functions[i32.!(func_index)]);
@@ -100,15 +115,16 @@ def fire_on_alloc_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	var accessor = dynamicLoc.frame.getFrameAccessor();
 	var address_value = Values.unbox_u(accessor.getTopOfStack());
 	var size_of_allocation = Values.unbox_u(accessor.getLocal(0));
+
 	var curr_allocation_id = global_alloc_status.curr_allocation_id;
 	var curr_vec_index 	   = int.!(curr_allocation_id);
 
-	global_alloc_status.addresses.set(curr_vec_index, address_value); 
-	global_alloc_status.freed.set(curr_vec_index, false); 
-	global_alloc_status.size.set(curr_vec_index, size_of_allocation); 
+	var callsite_pc = get_alloc_callsite_pc(curr_vec_index);
+	var callsite_funcdecl = get_alloc_callsite_funcdecl(curr_vec_index);
 
-	var callcontext = CallContext(global_alloc_status.module, global_alloc_status.callsite_funcdecl[curr_vec_index], global_alloc_status.callsite_pc[curr_vec_index]);
+	global_alloc_status.alloc_params.set(curr_vec_index, AllocParam(false, size_of_allocation, address_value, callsite_pc, callsite_funcdecl)); 
 
+	var callcontext = CallContext(global_alloc_status.module, callsite_funcdecl, callsite_pc);
 	output_alloc_record(callcontext, size_of_allocation, address_value, curr_allocation_id + 1);
 
 	global_alloc_status.curr_allocation_id +=1;
@@ -132,18 +148,18 @@ def update_global_alloc_status(dynamicLoc : DynamicLoc, func_index : u31, module
 		var curr_allocation_id = global_alloc_status.curr_allocation_id;
 		var curr_vec_index = int.!(curr_allocation_id);
 
-		global_alloc_status.callsite_pc.set(curr_vec_index , callsite_pc);
-		global_alloc_status.callsite_funcdecl.set(curr_vec_index, callsite_funcdecl);
-
+		global_alloc_status.alloc_params.set(curr_vec_index, AllocParam(false, 0, 0, callsite_pc, callsite_funcdecl)); 
 		return ProbeAction.Continue;
+
 	} else if (is_function_specified_by_filter(module, free_filter, func_index)) {
 		var address_to_free = Values.unbox_u(accessor.getTopOfStack());
 		var callcontext = CallContext(global_alloc_status.module, accessor.func().decl, accessor.pc());
 
-		for (i : u64 = 0; i < global_alloc_status.addresses.length; i++) {
-			if (global_alloc_status.addresses.get(int.!(i)) == address_to_free && !global_alloc_status.freed.get(int.!(i))) {
+		for (i : u64 = 0; i < global_alloc_status.alloc_params.length; i++) {
+			if (get_alloc_address(int.!(i)) == address_to_free && !get_alloc_freed_status(int.!(i))) {
 				output_free_record(callcontext, address_to_free, i+1);
-				global_alloc_status.freed.set(int.!(i), true);
+				var new_alloc_param = AllocParam(true, get_alloc_size(int.!(i)), get_alloc_address(int.!(i)), get_alloc_callsite_pc(int.!(i)),get_alloc_callsite_funcdecl(int.!(i)));
+				global_alloc_status.alloc_params.set(int.!(i), new_alloc_param);
 				return ProbeAction.Continue;
 			}
 		} 
