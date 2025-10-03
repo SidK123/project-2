@@ -197,23 +197,36 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 	var starting_block_hit = false;
 	var ending_block_hit   = false;
 
+	var starting_block_hit_way = 0;
+	var ending_block_hit_way   = 0;
+
+	var starting_block_hit_tag : u32 = 0;
+	var ending_block_hit_tag : u32   = 0;
+
 	for (i = 0; i < NUM_WAYS; i++) {
 		var entry_way_i = cache[i][start_block_set_index];
 		if (entry_way_i.tag == start_block_tag && entry_way_i.data != 0) { 
+			starting_block_hit_way = i;
+			starting_block_hit_tag = entry_way_i.tag;
 			starting_block_hit = true; 
-			cache[i][start_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, RANDOM_DATA);
 		} 
 		entry_way_i = cache[i][ending_block_set_index];
 		if (entry_way_i.tag == ending_block_tag && entry_way_i.data != 0) {
+			ending_block_hit_way = i;
+			ending_block_hit_tag = entry_way_i.tag;
 			ending_block_hit = true;
-			cache[i][ending_block_set_index] = CacheEntry(global_timestamp, entry_way_i.tag, RANDOM_DATA);
 		}
 	}
 
-	if (starting_block_hit && ending_block_hit) {
+	if (starting_block_hit) {
 		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), true);
-		return ProbeAction.Continue;
+		cache[starting_block_hit_way][start_block_set_index] = CacheEntry(global_timestamp, starting_block_hit_tag, RANDOM_DATA);
 	} 
+
+	if (ending_block_hit && (start_block_set_index != ending_block_set_index)) {
+		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), true);
+		cache[ending_block_hit_way][ending_block_set_index] = CacheEntry(global_timestamp, ending_block_hit_tag, RANDOM_DATA);
+	}
 	
 	if (!starting_block_hit) {
 		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
@@ -222,9 +235,7 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 	} 
 
 	if(!ending_block_hit && (start_block_set_index != ending_block_set_index)) {
-		if (starting_block_hit) {
-			update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
-		}
+		update_vec_at_pc(module, accessor.func().decl.func_index, op, accessor.pc(), false);
 		var way = find_way_for_cache_line(ending_block_set_index);
 		cache[way][ending_block_set_index] = CacheEntry(global_timestamp, ending_block_tag, RANDOM_DATA);
 	}
