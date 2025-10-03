@@ -35,6 +35,9 @@ class MemoryAllocationMonitor extends Monitor {
 		if (alloc_func != null) {
 			mm.beforeFuncReturn(alloc_func, fire_on_alloc_return);
 		} 
+		if (free_func != null) {
+			mm.beforeFuncReturn(free_func, fire_on_free_return);
+		}
 		global_alloc_status.module = module;
 		mm.forEachFunc(instrumentFunc);
 	}
@@ -72,6 +75,9 @@ type AllocParam(freed : bool, alloc_size : u32, alloc_address : u32, callsite_pc
 
 private class AllocStatus() {
 	var module : Module;
+	var latest_free_address : u32;
+	var latest_free_callsite_pc : int;
+	var latest_free_callsite_funcdecl : FuncDecl;
 	var curr_allocation_id : u64 = 0;
 	var alloc_params = Vector<AllocParam>.new();
 }
@@ -134,6 +140,24 @@ def fire_on_alloc_return(dynamicLoc: DynamicLoc) -> ProbeAction {
 	return ProbeAction.Continue;
 }
 
+def fire_on_free_return(dynamicLoc: DynamicLoc) -> ProbeAction {
+	var accessor = dynamicLoc.frame.getFrameAccessor();
+	var address_to_free = Values.unbox_u(accessor.getLocal(0));
+	var callcontext = CallContext(global_alloc_status.module, global_alloc_status.latest_free_callsite_funcdecl, global_alloc_status.latest_free_callsite_pc);
+
+	for (i : u64 = 0; i < global_alloc_status.alloc_params.length; i++) {
+		if (get_alloc_address(int.!(i)) == address_to_free && !get_alloc_freed_status(int.!(i))) {
+			var new_alloc_param = AllocParam(true, get_alloc_size(int.!(i)), get_alloc_address(int.!(i)), accessor.pc(), accessor.func().decl);
+			global_alloc_status.alloc_params.set(int.!(i), new_alloc_param);
+			output_free_record(callcontext, global_alloc_status.latest_free_address, i + 1);
+			return ProbeAction.Continue;
+		}
+	} 
+
+	output_free_record(callcontext, address_to_free, 0);
+	return ProbeAction.Continue;
+}
+
 def resolveFuncIdx(table: Table, entry_idx: int) -> int {
 	if (table.funcs != null) {
 		return WasmFunction.!(table.funcs[entry_idx]).decl.func_index;
@@ -146,13 +170,14 @@ def update_global_alloc_status(direct_or_indirect : bool, dynamicLoc : DynamicLo
 	var callsite_pc = accessor.pc();
 	var callsite_funcdecl = accessor.func().decl;
 	var size_of_allocation : u32;
-	if (direct_or_indirect) {
-		size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
-	} else {
-		size_of_allocation = Values.unbox_u(accessor.getOperand(-1));
-	}
 
 	if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
+		if (direct_or_indirect) {
+			size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
+		} else {
+			size_of_allocation = Values.unbox_u(accessor.getOperand(-1));
+		}
+
 		var curr_allocation_id = global_alloc_status.curr_allocation_id;
 		var curr_vec_index = int.!(curr_allocation_id);
 
@@ -161,21 +186,12 @@ def update_global_alloc_status(direct_or_indirect : bool, dynamicLoc : DynamicLo
 
 	} else if (is_function_specified_by_filter(module, free_filter, func_index)) {
 		var address_to_free = Values.unbox_u(accessor.getTopOfStack());
-		var callcontext = CallContext(global_alloc_status.module, accessor.func().decl, accessor.pc());
-
-		for (i : u64 = 0; i < global_alloc_status.alloc_params.length; i++) {
-			if (get_alloc_address(int.!(i)) == address_to_free && !get_alloc_freed_status(int.!(i))) {
-				output_free_record(callcontext, address_to_free, i+1);
-				var new_alloc_param = AllocParam(true, get_alloc_size(int.!(i)), get_alloc_address(int.!(i)), get_alloc_callsite_pc(int.!(i)),get_alloc_callsite_funcdecl(int.!(i)));
-				global_alloc_status.alloc_params.set(int.!(i), new_alloc_param);
-				return ProbeAction.Continue;
-			}
-		} 
-	
-		output_free_record(callcontext, address_to_free, 0);
+		global_alloc_status.latest_free_address = address_to_free;
+		global_alloc_status.latest_free_callsite_pc = accessor.pc();
+		global_alloc_status.latest_free_callsite_funcdecl = accessor.func().decl;
 		return ProbeAction.Continue;
-
 	}
+
 	return ProbeAction.Continue;
 }
 

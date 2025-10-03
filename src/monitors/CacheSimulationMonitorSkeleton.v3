@@ -140,7 +140,7 @@ def find_way_for_cache_line (set_index : u32) -> int {
 		if (cache[i][set_index].data == 0) {
 			return i; // If cache is cold.
 		}
-		if (int.!(cache[i][set_index].reference_count) < lru_counter) {
+		if (cache[i][set_index].reference_count < lru_counter) {
 			lru_counter = int.!(cache[i][set_index].reference_count);
 			lru_way = i; 
 		}
@@ -167,10 +167,6 @@ def update_vec_at_pc (module : Module, func_index : int, op : string, pc : int, 
 	}
 	func_pc_to_cache_entry[func_index].put(new_stat);
 	return;
-}
-
-def compare_cache_stats (stat1 : PcCacheStat, stat2 : PcCacheStat) -> bool {
-	return (stat1.pc > stat2.pc);
 }
 
 // Structure of address: | 14 Bits of Tag | 11 Bits of Set Index | 7 Bits of Byte Offset | 
