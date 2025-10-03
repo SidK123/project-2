@@ -172,6 +172,7 @@ def update_global_alloc_status(direct_or_indirect : bool, dynamicLoc : DynamicLo
 	var size_of_allocation : u32;
 
 	if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
+
 		if (direct_or_indirect) {
 			size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
 		} else {
