@@ -28,6 +28,7 @@ class MemoryAllocationMonitor extends Monitor {
 	// TODO: Monitor Implementation
 
 	def onParse(module: Module, err: ErrorGen) {
+ 		global_alloc_status = AllocStatus.new();
 		var mm = ModuleInstrumenter.new(module);
 		var alloc_func = return_func_decl_of_filter(module, alloc_filter);
 		var free_func = return_func_decl_of_filter(module, free_filter);
@@ -75,7 +76,7 @@ private class AllocStatus() {
 	var alloc_params = Vector<AllocParam>.new();
 }
 
-def global_alloc_status = AllocStatus.new();
+var global_alloc_status : AllocStatus;
 
 def get_alloc_freed_status(id : int) -> bool {
 	return global_alloc_status.alloc_params.get(id).freed;
@@ -140,11 +141,16 @@ def resolveFuncIdx(table: Table, entry_idx: int) -> int {
 	return -1;
 }
 
-def update_global_alloc_status(dynamicLoc : DynamicLoc, func_index : u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) -> ProbeAction {
+def update_global_alloc_status(direct_or_indirect : bool, dynamicLoc : DynamicLoc, func_index : u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) -> ProbeAction {
 	var accessor = dynamicLoc.frame.getFrameAccessor();
 	var callsite_pc = accessor.pc();
 	var callsite_funcdecl = accessor.func().decl;
-	var size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
+	var size_of_allocation : u32;
+	if (direct_or_indirect) {
+		size_of_allocation = Values.unbox_u(accessor.getTopOfStack());
+	} else {
+		size_of_allocation = Values.unbox_u(accessor.getOperand(-1));
+	}
 
 	if (is_function_specified_by_filter(module, alloc_filter, func_index)) {
 		var curr_allocation_id = global_alloc_status.curr_allocation_id;
@@ -175,7 +181,7 @@ def update_global_alloc_status(dynamicLoc : DynamicLoc, func_index : u31, module
 
 private class CallProbe(tail: bool, func_index: u31, module : Module, alloc_filter : DeclFilter, free_filter : DeclFilter) extends Probe {
 	def fire(dynamicLoc: DynamicLoc) -> ProbeAction {
-		return update_global_alloc_status(dynamicLoc, func_index, module, alloc_filter, free_filter);
+		return update_global_alloc_status(true, dynamicLoc, func_index, module, alloc_filter, free_filter);
 	}		
 }
 
@@ -187,7 +193,7 @@ private class CallIndirectProbe(tail: bool, table_index: u31, module : Module, a
 		if (table_index >= table.funcs.length) return ProbeAction.Continue; // will trap
 		var func_index = resolveFuncIdx(table, target_index);
 
-		return update_global_alloc_status(dynamicLoc, u31.!(func_index), module, alloc_filter, free_filter);
+		return update_global_alloc_status(false, dynamicLoc, u31.!(func_index), module, alloc_filter, free_filter);
 	}
 }
 

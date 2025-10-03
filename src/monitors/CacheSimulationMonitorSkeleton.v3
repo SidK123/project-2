@@ -95,6 +95,9 @@ private class CacheSimulatorBytecodeVisitor(var bi : BytecodeIterator, module : 
 	def visit_I64_LOAD32_U(mm: MemArg)	{ 
 		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 4));
 	}
+	def visit_F32_LOAD(mm: MemArg)	{ 
+		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
 	def visit_F64_LOAD(mm: MemArg)	{ 
 		insert(LoadProbe.new(module, mm, bi.current().mnemonic, 8));
 	}
@@ -117,6 +120,9 @@ private class CacheSimulatorBytecodeVisitor(var bi : BytecodeIterator, module : 
 		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 2));
 	}
 	def visit_I64_STORE32(mm: MemArg) {
+		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 4));
+	}
+	def visit_F32_STORE(mm: MemArg) {
 		insert(StoreProbe.new(module, mm, bi.current().mnemonic, 4));
 	}
 	def visit_F64_STORE(mm: MemArg) {
@@ -173,7 +179,7 @@ def cache_update (load_or_store : bool, access_size : u32, mm : MemArg, module :
 	var base_address : u32;
 	if (load_or_store) { // Load
 		base_address = Values.unbox_u(accessor.getTopOfStack());
-	} else { // Store
+	} else {
 		base_address = Values.unbox_u(accessor.getOperand(-1));
 	}
 
@@ -241,7 +247,7 @@ private class StoreProbe(module : Module, mm : MemArg, op : string, access_size 
 }
 
 type PcCacheStat(pc : int, op : string, stat : CacheStat);
-type CacheEntry(reference_count : u32, tag : u32, data : u32); 
+type CacheEntry(reference_count : u32, tag : u32, data : u32); // Technically never comparing against data, but whatever.
 
 var func_pc_to_cache_entry : Array<Vector<PcCacheStat>>;
 var cache : Array<Array<CacheEntry>>;

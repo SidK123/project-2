@@ -48,7 +48,7 @@ def compare(a: InstrClassEntry, b: InstrClassEntry) -> bool {
 	} 
 	var second_char_a = a.op.name[1];
 	var second_char_b = b.op.name[1];
-	return (first_char_a < second_char_b);
+	return (second_char_a < second_char_b);
 }
 
 def sort_array() -> Array<InstrClassEntry> { 
